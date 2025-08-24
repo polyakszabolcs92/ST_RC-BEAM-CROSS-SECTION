@@ -1,5 +1,6 @@
 streamlit
 structuralcodes>=0.5.0
 pandas
+openpyxl
 numpy
 matplotlib

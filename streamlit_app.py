@@ -1,46 +1,61 @@
 import streamlit as st
 import pandas as pd
 
-st.title("RC Beam Cross-Section Calculator")
+# ---- Alap beállítások ----
+st.set_page_config(page_title="RC-BEAM-CROSS-SECTION", layout="wide")
 
-# --- Inicializálás ---
+# ---- Cím és leírás ----
+st.title("Vasbeton gerenda keresztmetszet méretező")
+st.text('EC2:2010 / MSZ 15022 szabványok szerint')
+
+standard_list = ['EC2:2010', 'MSZ 15022']
+
+# ---- Üres session_state inicializálása ----
 if "results" not in st.session_state:
     st.session_state.results = {}
 
-# ANYAGOK
+# ----------------------------------------------------------------
+# FUNCTIONS IN-APP
 
+# ---- Function to import Excel files ----
 @st.cache_data
 def load_materials_from_excel(file_path, sheet_name):
     df = pd.read_excel(file_path, sheet_name=sheet_name)
     return df
 
+# ----------------------------------------------------------------
+# MSZ 15022 szerinti anyagok betöltése
 df_msz_betonacel = load_materials_from_excel(".static/anyagok_msz.xlsx", "msz-betonacel")
-df_msz_betonacel
+df_msz_beton = load_materials_from_excel(".static/anyagok_msz.xlsx", "msz-beton")
 
-# --- Bemenő adatok ---
-bw = st.number_input("Szélesség bw [mm]", value=300)
-h = st.number_input("Magasság h [mm]", value=500)
-fck = st.number_input("Beton szilárdság fck [MPa]", value=30)
-as1 = st.number_input("Húzott vasalás területe As1 [mm²]", value=1500)
+# Anyagminőségeket tartalmazó sorok kiszedése választólistához
+msz_betonacelok = df_msz_betonacel['betonacel'].tolist()
+msz_betonok = df_msz_beton['beton'].tolist()
 
-# --- Számítási függvények (példák!) ---
-def calc_MRd(bw, h, fck, as1):
-    # ⚠️ Példa képlet! (nem Eurocode szerinti!)
-    return 0.8 * as1 * (h - 50) * 1e-6   # kNm
 
-def calc_VRd(bw, h, fck):
-    # ⚠️ Példa képlet! (nem Eurocode szerinti!)
-    return 0.6 * bw * h * (fck**0.5) * 1e-3   # kN
+# --- BEMENŐ ADATOK ---
+# Alkalmazott szabvány kiválasztása
+applied_standard = st.selectbox('Alkalmazott szabvány:', options=standard_list, 
+                                index=0, width=200)
+
+# Két oszlopos elrendezés
+col1, col2 = st.columns(2, gap="small", width='stretch', border=True)
+
+with col1:
+    st.header("Geometria és anyagok")
+    st.number_input('Enter a number')
+
+with col2:
+    st.header("Alkalmazott Vasalás")
+    st.number_input('Enter a number2')
+
 
 # --- Számítás gomb ---
-if st.button("Számítás"):
-    st.session_state.results = {
-        "MRd (nyomaték teherbírás)": calc_MRd(bw, h, fck, as1),
-        "VRd (nyírási teherbírás)": calc_VRd(bw, h, fck)
-    }
+# if st.button("Számítás"):
+    # st.session_state.results = {
+    #     "MRd (nyomaték teherbírás)": calc_MRd(bw, h, fck, as1),
+    #     "VRd (nyírási teherbírás)": calc_VRd(bw, h, fck)}
 
 # --- Eredmények ---
-if st.session_state.results:
-    st.subheader("📊 Számítási eredmények")
-    for key, val in st.session_state.results.items():
-        st.write(f"**{key}:** {val:.2f}")
+# if st.session_state.results:
+    

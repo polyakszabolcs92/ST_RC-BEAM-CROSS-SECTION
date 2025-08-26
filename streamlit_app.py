@@ -68,7 +68,7 @@ def polygon_from_profile(df, z_col="z [cm]", b_col="b(z) [cm]"):
 
 # ---- Create function to plot the cross-section
 def plot_polygon(polygon, ax=None, facecolor="limegreen", edgecolor="black", 
-                 alpha=1.0, figsize=(2, 2), fontsize=4):
+                 alpha=1.0, figsize=(4, 4), fontsize=5):
     """
     Plot a Shapely polygon with matplotlib.
     
@@ -118,8 +118,9 @@ strand_list = df_mat_strand['paszma'].tolist()
 # ----------------------------------------------------------------
 # BEMENŐ ADATOK
 
-# Három oszlopos elrendezés a bemenő adatoknak
-col1, col2, col3 = st.columns(3, gap="small", width='stretch', border=True)
+# Három oszlopos elrendezés a bemenő adatoknak 
+# 1000px széles mező, az oszlopok relatív szélessége [1, 1, 1.2]
+col1, col2, col3 = st.columns([1, 1, 1.2], gap="small", width=1000, border=True)
 
 with col1:
     st.header("ANYAGOK")
@@ -146,7 +147,7 @@ with col1:
 
 
 with col2:
-    st.header("GEOMETRIA", help="Gerenda keresztmetszeti méreteinek megadása, a felső szélső száltól lefelé haladva.")
+    st.header("GEOMETRIA")
 
     st.caption("""
                - 'z' a keresztmetszet jellemző szálainak relatív magassági szintje

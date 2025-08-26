@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 from shapely import Polygon
 import structuralcodes as sc
 
@@ -30,6 +31,72 @@ def load_materials_from_excel(file_path, sheet_name):
      """
     df = pd.read_excel(file_path, sheet_name=sheet_name)
     return df
+
+# ---- Function to create Shapely polygon from dataframe values ----
+def polygon_from_profile(df, z_col="z [cm]", b_col="b(z) [cm]"):
+    """
+    Build a Shapely polygon from a dataframe containing vertical coordinates (z)
+    and widths b(z).
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain columns for z and b(z).
+    z_col : str
+        Column name for z coordinate.
+    b_col : str
+        Column name for width b(z).
+    
+    Returns
+    -------
+    shapely.geometry.Polygon
+    """
+    # Sort by z so we go bottom-to-top
+    df_sorted = df.sort_values(z_col)
+
+    # Left boundary: from bottom to top
+    left_side = [(-row[b_col]/2, row[z_col]) for _, row in df_sorted.iterrows()]
+
+    # Right boundary: from top to bottom
+    right_side = [(row[b_col]/2, row[z_col]) for _, row in df_sorted[::-1].iterrows()]
+
+    # Combine to form closed loop
+    coords = left_side + right_side
+
+    return Polygon(coords)
+
+
+# ---- Create function to plot the cross-section
+def plot_polygon(polygon, ax=None, facecolor="limegreen", edgecolor="black", 
+                 alpha=1.0, figsize=(2, 2), fontsize=4):
+    """
+    Plot a Shapely polygon with matplotlib.
+    
+    Parameters
+    ----------
+    polygon : shapely.geometry.Polygon
+        The polygon to plot.
+    ax : matplotlib.axes.Axes, optional
+        Existing matplotlib axis. If None, a new figure and axis are created.
+    facecolor : str
+        Fill color of the polygon.
+    edgecolor : str
+        Outline color of the polygon.
+    alpha : float
+        Transparency of the fill.
+    """
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+
+    # Exterior boundary
+    x, y = polygon.exterior.xy
+    ax.fill(x, y, facecolor=facecolor, edgecolor=edgecolor, alpha=alpha)
+
+    ax.tick_params(axis="both", labelsize=fontsize)
+
+    ax.set_aspect("equal")
+    # Streamlit display
+    st.pyplot(fig)
 
 
 # ----------------------------------------------------------------
@@ -92,13 +159,14 @@ with col2:
                                                 {"z [cm]": 0.0, "b(z) [cm]": 25.0}]),
                                                 num_rows="dynamic",
                                                 hide_index=True)
-
-
+    
     if felbeton_checkbox:
         h_topping = st.number_input("Felbeton vastagság (htopping) [cm]:", min_value=0., value=20., step=0.1, format="%0.1f")
         b_topping = st.number_input("Felbeton szélesség (btopping) [cm]:", min_value=0., value=20., step=0.1, format="%0.1f")
 
-    # INSERT IDE: KERESZTMETSZET KIRAJZOLÁSA REAL TIME!
+    # Keresztmetszet megjelenítése
+    beam_cross_section = polygon_from_profile(df_cs_points)
+    plot_polygon(beam_cross_section)
 
 with col3:
     st.header("VASALÁS")

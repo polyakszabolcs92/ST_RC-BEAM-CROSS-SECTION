@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from shapely import Polygon
+from structuralcodes.geometry import add_reinforcement_line
 import structuralcodes as sc
 
 # ---- Alap beállítások ----
@@ -100,10 +101,6 @@ def plot_polygon(polygon, ax=None, facecolor="limegreen", edgecolor="black",
 
 
 # ----------------------------------------------------------------
-# KONSTANS OBJEKTUMOK
-cross_section_types = ['Teglalap', 'T', 'I', 'FordT', 'Trapez']   # keresztmetszetek listája
-
-# ----------------------------------------------------------------
 # ANYAGJELLEMZŐK IMPORTÁLÁSA EXCELBŐL
 df_mat_concrete = load_materials_from_excel(".static/anyagok_ec2.xlsx", "ec-beton")
 df_mat_rebar = load_materials_from_excel(".static/anyagok_ec2.xlsx", "ec-betonacel")
@@ -127,47 +124,48 @@ with col1:
     
     # Beton input adatok
     st.subheader("Beton")
-    concrete_beam = st.selectbox("Gerenda szilárdsági osztály:", concrete_list, index=4)
+    selected_concrete_beam = st.selectbox("Gerenda szilárdsági osztály:", concrete_list, index=4)
     felbeton_checkbox = st.checkbox("Felbeton?", value=False)
     if felbeton_checkbox:
-        concrete_topping = st.selectbox("Felbeton szilárdsági osztály:", concrete_list, index=3)
-    gamma_c = st.number_input("Biztonsági tényező (γc):", min_value=0.95, max_value=2.0, value=1.5, step=0.05)
+        selected_concrete_topping = st.selectbox("Felbeton szilárdsági osztály:", concrete_list, index=3)
+    gamma_c = st.number_input("Biztonsági tényező (γc):", min_value=1.0, max_value=2.0, value=1.5, step=0.05)
     alfa_cc = st.number_input("Nyomószilárdság módosító tényező (αcc):", min_value=0.75, max_value=1.00, value=1.00, step=0.05,
                               help="A tartós terhelés nyomószilárdságra gyakorolt hatását és a terhelés módjából származó kedvezőtlen hatásokat figyelembe vevő tényező.")
     
     # Betonacél input adatok
     st.subheader("Betonacél")
-    rebar = st.selectbox("Válassza ki a betonacél típusát:", rebar_list, index=3)
-    gamma_s = st.number_input("Biztonsági tényező (γs):", min_value=0.95, max_value=2.0, value=1.15, step=0.05)
+    selected_rebar_longitudinal = st.selectbox("Hosszvasalás betonacél:", rebar_list, index=3)
+    selected_rebar_stirrup = st.selectbox("Kengyel betonacél:", rebar_list, index=3)
+    gamma_s = st.number_input("Biztonsági tényező (γs):", min_value=1.00, max_value=2.0, value=1.15, step=0.05)
     
     # Feszítőpászma input adatok
     st.subheader("Feszítőpászma")
-    strand = st.selectbox("Válassza ki a feszítőpászma típusát:", strand_list, index=1)
-    gamma_p = st.number_input("Biztonsági tényező (γp):", min_value=0.95, max_value=2.0, value=1.15, step=0.05)
+    selected_strand = st.selectbox("Válassza ki a feszítőpászma típusát:", strand_list, index=1)
+    gamma_p = st.number_input("Biztonsági tényező (γp):", min_value=1.00, max_value=2.0, value=1.15, step=0.05)
 
 
 with col2:
-    st.header("GEOMETRIA")
+    st.header("GEOMETRIA", 
+              help= """
+- 'z' a keresztmetszet jellemző szálainak relatív magassági szintje
+- 'b(z)' a keresztmetszet szélessége az adott 'z' magasságban
+- 'z' értékének fentről lefelé csökkennie kell!
+- Csak gyenge tengelyre szimmetrikus keresztmetszet definiálható!""")
 
-    st.caption("""
-               - 'z' a keresztmetszet jellemző szálainak relatív magassági szintje
-               - 'b(z)' a keresztmetszet szélessége az adott 'z' magasságban
-               - 'z' értékének fentről lefelé csökkennie kell!
-               - Csak gyenge tengelyre szimmetrikus keresztmetszet definiálható!
-               """)
-    
+    # Keresztmetszet definiálása
     df_cs_points = st.data_editor(pd.DataFrame([{"z [cm]": 50.0, "b(z) [cm]": 25.0},
                                                 {"z [cm]": 0.0, "b(z) [cm]": 25.0}]),
                                                 num_rows="dynamic",
                                                 hide_index=True)
     
+    # Felbeton definiálása
     if felbeton_checkbox:
         h_topping = st.number_input("Felbeton vastagság (htopping) [cm]:", min_value=0., value=20., step=0.1, format="%0.1f")
         b_topping = st.number_input("Felbeton szélesség (btopping) [cm]:", min_value=0., value=20., step=0.1, format="%0.1f")
-
-    # Keresztmetszet megjelenítése
-    beam_cross_section = polygon_from_profile(df_cs_points)
-    plot_polygon(beam_cross_section)
+        topping_cross_section = Polygon([(-b_topping/2, df_cs_points['z [cm]'].max()),
+                                        (b_topping/2, df_cs_points['z [cm]'].max()),
+                                        (b_topping/2, df_cs_points['z [cm]'].max()+h_topping),
+                                        (-b_topping/2, df_cs_points['z [cm]'].max()+h_topping)])
 
 with col3:
     st.header("VASALÁS")
@@ -194,13 +192,81 @@ with col3:
                                                {"d [mm]": 8, "s [mm]": 200, "nsw [szár]": 2}]),
                                  num_rows="dynamic",
                                  hide_index=True)
-    
+
+# ----------------------------------------------------------------
+# SZÁMÍTÁSI ALAP VÁLTOZÓK DEFINIÁLÁSA
+
+# BETONOK DEFINIÁLÁSA
+concrete_beam = sc.materials.concrete.ConcreteEC2_2004(fck= df_mat_concrete.loc[df_mat_concrete['beton'] == selected_concrete_beam, 'fck'].values[0],
+                                                       density=2500,
+                                                       gamma_c=gamma_c,
+                                                       alpha_cc=alfa_cc)
+if felbeton_checkbox:
+    concrete_topping = sc.materials.concrete.ConcreteEC2_2004(fck= df_mat_concrete.loc[df_mat_concrete['beton'] == selected_concrete_topping, 'fck'].values[0],
+                                                             density=2500,
+                                                             gamma_c=gamma_c,
+                                                             alpha_cc=alfa_cc)
+
+# BETONACÉLOK DEFINIÁLÁSAselected_rebar_longitudinal
+rebar = sc.materials.reinforcement.ReinforcementEC2_2004(fyk= df_mat_rebar.loc[df_mat_rebar['betonacel'] == selected_rebar_longitudinal, 'fyk'].values[0],
+                                                         Es=200000,
+                                                         ftk = df_mat_rebar.loc[df_mat_rebar['betonacel'] == selected_rebar_longitudinal, 'ftk'].values[0],
+                                                         gamma_s=gamma_s,
+                                                         epsuk= df_mat_rebar.loc[df_mat_rebar['betonacel'] == selected_rebar_longitudinal, 'epsuk'].values[0])
+
+# FESZÍTŐPÁSZMÁK DEFINIÁLÁSA
+strand = sc.materials.reinforcement.ReinforcementEC2_2004(fyk= df_mat_strand.loc[df_mat_strand['paszma'] == selected_strand, 'fp.0.1k'].values[0],
+                                                          Es=195000,
+                                                          ftk = df_mat_strand.loc[df_mat_strand['paszma'] == selected_strand, 'fpk'].values[0],
+                                                          gamma_s=gamma_p,
+                                                          epsuk= df_mat_strand.loc[df_mat_strand['paszma'] == selected_strand, 'epsuk'].values[0])
+
+# KERESZTMETSZET LÉTREHOZÁSA ANYAGOKKAL
+cross_section_beam = sc.geometry.SurfaceGeometry(poly=polygon_from_profile(df_cs_points),
+                                                 material=concrete_beam)
+
+if felbeton_checkbox:
+    cross_section_topping = sc.geometry.SurfaceGeometry(poly=topping_cross_section,
+                                                        material=concrete_topping)
+    cross_section_beam = cross_section_beam.__add__(other=cross_section_topping)
+
+# Vasalások hozzáadása a keresztmetszethez
+for _, row in df_bottom_reinf.iterrows():
+    cross_section_beam = add_reinforcement_line(cross_section_beam,
+                                                coords_i=(-(df_cs_points["b(z) [cm]"].iloc[-1]/2 + 3.5)*10, row['zi [cm]']*10),
+                                                coords_j=((df_cs_points["b(z) [cm]"].iloc[-1]/2 - 3.5)*10, row['zi [cm]']*10) ,
+                                                diameter=row['d [mm]'],
+                                                n=row['N [db]'],
+                                                material=rebar)
+
+
+# cross_section_beam.geometries[0].polygon.exterior
+# fig, ax = plt.subplots()
+# for geom in cross_section_beam.geometries:
+#     x, y = geom.polygon.exterior.xy
+#     ax.plot(x, y, color="black")
+#     ax.fill(x, y, facecolor="limegreen", edgecolor="black", alpha=1.0)
+# ax.set_aspect("equal")
+
+# st.pyplot(fig)
+
+
+# ----------------------------------------------------------------
+# SZÁMÍTÁSI FÜGGVÉNYEK
+
+
+
+
+
+# ----------------------------------------------------------------
 # --- Számítás gomb ---
-# if st.button("Számítás"):
+if st.button("SZÁMÍTÁS", type="primary", icon=":material/calculate:", ):
+    pass
     # st.session_state.results = {
     #     "MRd (nyomaték teherbírás)": calc_MRd(bw, h, fck, as1),
     #     "VRd (nyírási teherbírás)": calc_VRd(bw, h, fck)}
 
+# ----------------------------------------------------------------
 # --- Eredmények ---
 # if st.session_state.results:
     
